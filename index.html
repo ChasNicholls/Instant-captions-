@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>Instant Captioner</title>
+  <style>
+    :root{
+      --bg:#0b0b0c; --fg:#f5f7fb; --muted:#aab2c0; --accent:#58a6ff; --chip:#1e1f24;
+      --final:#ffffff; --interim:#9aa3af;
+      --panel:#121318; --danger:#ff6b6b; --ok:#38d39f; --warn:#ffd166;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background:var(--bg); color:var(--fg);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif;
+      line-height:1.4;
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    }
+    header{
+      position:sticky; top:0; z-index:5;
+      background: linear-gradient(180deg, rgba(11,11,12,.98), rgba(11,11,12,.7) 70%, rgba(11,11,12,0));
+      backdrop-filter: blur(6px);
+      padding: 10px 14px;
+      border-bottom: 1px solid #222;
+    }
+    .row{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+    .grow{flex:1 1 auto}
+    .controls{
+      display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:flex-start;
+    }
+    button, select, input[type="range"]{
+      appearance:none; border:1px solid #2a2d35; background:var(--chip); color:var(--fg);
+      padding:10px 12px; border-radius:10px; font-weight:600; cursor:pointer;
+    }
+    button.primary{ background: #2563eb; border-color:#1e45b5; }
+    button.danger{ background:#a11616; border-color:#7f0f0f; }
+    button.ghost{ background:transparent; border-color:#2a2d35 }
+    button:disabled{opacity:.5; cursor:not-allowed}
+    select, .chip{font-weight:600}
+    label{font-size:.85rem; color:var(--muted)}
+    .caption{
+      max-width:1100px; margin:16px auto; padding: 8px 16px 140px;
+    }
+    .bubble{
+      font-size: clamp(24px, 6vw, 54px);
+      font-weight:800; letter-spacing:.2px;
+      background: var(--panel);
+      border:1px solid #1f232b; border-radius:18px;
+      padding: 20px 18px;
+      min-height: 28vh;
+      display:flex; align-items:center; justify-content:flex-start;
+      line-height:1.18;
+    }
+    .final{ color: var(--final); }
+    .interim{ color: var(--interim); }
+    .statusbar{
+      position:fixed; bottom:0; left:0; right:0; z-index:4;
+      background: linear-gradient(0deg, rgba(11,11,12,1), rgba(11,11,12,.85) 60%, rgba(11,11,12,0));
+      border-top:1px solid #222; padding:10px 14px;
+    }
+    .chip{padding:8px 10px; border-radius:999px; background:#181a20; border:1px solid #2a2d35; display:inline-flex; align-items:center; gap:8px}
+    .muted{color:var(--muted)}
+    .hint{font-size:.9rem; color:var(--muted); margin-top:4px}
+    .sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
+    .toolbar{display:flex; gap:8px; flex-wrap:wrap}
+    .slider{display:flex; align-items:center; gap:6px}
+    .slider input{width:140px}
+    .pilltoggle{display:inline-flex; border:1px solid #2a2d35; border-radius:999px; overflow:hidden}
+    .pilltoggle button{border:none}
+    .pilltoggle .on{background:#0e7a3a}
+    .pilltoggle .off{background:#5a1b1b}
+    .brand{font-weight:900; letter-spacing:.2px}
+    .link{color:var(--accent); text-decoration:none}
+    .link:hover{text-decoration:underline}
+    .small{font-size:.85rem}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row">
+      <div class="brand">🎤 Instant Captioner</div>
+      <div class="grow"></div>
+      <div class="controls">
+        <button id="btnStart" class="primary">Start</button>
+        <button id="btnStop" class="danger" disabled>Stop</button>
+        <button id="btnClear" class="ghost">Clear</button>
+        <button id="btnSave" class="ghost">Save .txt</button>
+        <button id="btnFullscreen" class="ghost" title="Fullscreen (F)">Fullscreen</button>
+        <label class="sr" for="lang">Language</label>
+        <select id="lang" title="Language"></select>
+        <div class="slider">
+          <label for="font">Font</label>
+          <input id="font" type="range" min="24" max="72" value="54">
+        </div>
+        <div class="slider">
+          <label for="lineheight">Line</label>
+          <input id="lineheight" type="range" min="1.0" max="1.6" step="0.02" value="1.18">
+        </div>
+        <label class="chip small"><input id="toggleInterim" type="checkbox" checked> show interim</label>
+        <label class="chip small"><input id="toggleAutopause" type="checkbox" checked> auto-restart</label>
+        <label class="chip small"><input id="toggleCapitalize" type="checkbox" checked> smart caps</label>
+      </div>
+    </div>
+  </header>
+
+  <main class="caption">
+    <div class="bubble" id="bubble" aria-live="polite">
+      <div id="final" class="final"></div><div id="interim" class="interim"></div>
+    </div>
+    <div class="hint">
+      Tip: Aim your phone/tablet mic toward the TV. Reduce room noise. For best results, sit closer to the TV speaker.
+      On iOS Safari, make sure the ringer is ON and “Request Desktop Website” is OFF for mic prompts.
+    </div>
+  </main>
+
+  <footer class="statusbar">
+    <div class="row">
+      <div id="status" class="chip muted">idle</div>
+      <div id="level" class="chip muted">🔊 level: —</div>
+      <div class="grow"></div>
+      <div class="small muted">Shortcuts: S start/stop • C clear • F fullscreen • ⌘/Ctrl+S save</div>
+    </div>
+  </footer>
+
+  <script>
+  ;(() => {
+    const $ = sel => document.querySelector(sel);
+    const finalEl = $('#final');
+    const interimEl = $('#interim');
+    const statusEl = $('#status');
+    const levelEl = $('#level');
+    const btnStart = $('#btnStart');
+    const btnStop  = $('#btnStop');
+    const btnClear = $('#btnClear');
+    const btnSave  = $('#btnSave');
+    const btnFull  = $('#btnFullscreen');
+    const langSel  = $('#lang');
+    const font = $('#font');
+    const lineheight = $('#lineheight');
+    const toggleInterim = $('#toggleInterim');
+    const toggleAutopause = $('#toggleAutopause');
+    const toggleCapitalize = $('#toggleCapitalize');
+    const bubble = $('#bubble');
+
+    // Load language list
+    const LANGS = [
+      ['English (Australia)','en-AU'],['English (US)','en-US'],['English (UK)','en-GB'],
+      ['English (India)','en-IN'],['English (Canada)','en-CA'],
+      ['中文 (普通话, 中国)','cmn-Hans-CN'],['日本語','ja-JP'],['한국어','ko-KR'],
+      ['Español (España)','es-ES'],['Español (LatAm)','es-MX'],['Français','fr-FR'],
+      ['Deutsch','de-DE'],['Italiano','it-IT'],['Português (Brasil)','pt-BR']
+    ];
+    LANGS.forEach(([label, code]) => {
+      const opt = document.createElement('option');
+      opt.textContent = label; opt.value = code;
+      langSel.appendChild(opt);
+    });
+    // default to Australian English for you
+    langSel.value = 'en-AU';
+
+    // UI bindings
+    font.addEventListener('input', () => bubble.style.fontSize = font.value+'px');
+    lineheight.addEventListener('input', () => bubble.style.lineHeight = lineheight.value);
+    toggleInterim.addEventListener('change', () => interimEl.style.display = toggleInterim.checked ? '' : 'none');
+
+    btnClear.addEventListener('click', () => { finalEl.textContent=''; interimEl.textContent=''; });
+    btnSave.addEventListener('click', () => {
+      const text = (finalEl.textContent + (toggleInterim.checked? '\n' + interimEl.textContent : '')).trim();
+      const blob = new Blob([text || ''], {type:'text/plain'});
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().replace(/[:.]/g,'-');
+      a.href = URL.createObjectURL(blob);
+      a.download = `InstantCaption_${ts}.txt`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    btnFull.addEventListener('click', async () => {
+      if (!document.fullscreenElement) { await document.documentElement.requestFullscreen().catch(()=>{}); }
+      else { await document.exitFullscreen().catch(()=>{}); }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase()==='s'){ e.preventDefault(); isRunning? stop(): start(); }
+      if (e.key.toLowerCase()==='c'){ e.preventDefault(); finalEl.textContent=''; interimEl.textContent=''; }
+      if (e.key.toLowerCase()==='f'){ e.preventDefault(); btnFull.click(); }
+      if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){ e.preventDefault(); btnSave.click(); }
+    });
+
+    let rec=null, isRunning=false, restarting=false;
+    function setStatus(s){ statusEl.textContent = s; }
+    function capitalizeSmart(str){
+      if (!toggleCapitalize.checked) return str;
+      // Capitalize sentence starts after ., ?, ! and at beginning
+      return str.replace(/(^\s*[a-z])|([.?!]\s+[a-z])/g, m => m.toUpperCase());
+    }
+
+    function start(){
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)){
+        alert('Your browser lacks Web Speech Recognition. Try Chrome/Edge (desktop), or Safari on iOS 14+.');
+        return;
+      }
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      rec = new SR();
+      rec.lang = langSel.value;
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.maxAlternatives = 1;
+      isRunning = true;
+      btnStart.disabled = true; btnStop.disabled = false;
+      setStatus('🎧 listening…');
+
+      let lastFinal='';
+      rec.onresult = (e) => {
+        let interim='';
+        let final='';
+        for (let i=e.resultIndex; i<e.results.length; i++){
+          const r = e.results[i];
+          if (r.isFinal) final += r[0].transcript;
+          else interim += r[0].transcript;
+        }
+        if (final){
+          lastFinal = capitalizeSmart((finalEl.textContent + ' ' + final).trim().replace(/\s+/g,' '));
+          finalEl.textContent = lastFinal;
+          interimEl.textContent='';
+        }
+        if (interim && toggleInterim.checked){
+          interimEl.textContent = interim;
+        }
+      };
+      rec.onerror = (e) => {
+        setStatus('⚠️ ' + (e.error || 'error'));
+        // Auto-recover from "no-speech", "audio-capture", "network" where possible
+      };
+      rec.onstart = () => setStatus('🎧 listening…');
+      rec.onend = () => {
+        setStatus('⏸ stopped');
+        btnStart.disabled = false; btnStop.disabled = true;
+        isRunning = false;
+        if (toggleAutopause.checked && !restarting){
+          // Attempt a gentle restart after a short pause (helps keep session alive)
+          restarting = true;
+          setTimeout(() => { restarting=false; start(); }, 300);
+        }
+      };
+      rec.start();
+
+      // Light-weight level meter via getUserMedia (optional)
+      navigator.mediaDevices.getUserMedia({audio:{noiseSuppression:true, echoCancellation:true, autoGainControl:true}})
+        .then(stream => {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 1024;
+          src.connect(analyser);
+          const data = new Uint8Array(analyser.frequencyBinCount);
+          function tick(){
+            analyser.getByteTimeDomainData(data);
+            // simple RMS estimate
+            let sum=0;
+            for (let i=0;i<data.length;i++){ const v=(data[i]-128)/128; sum += v*v; }
+            const rms = Math.sqrt(sum/data.length);
+            const db = (20*Math.log10(rms+1e-6)).toFixed(1);
+            levelEl.textContent = `🔊 level: ${db} dBFS`;
+            if (isRunning) requestAnimationFrame(tick);
+            else { try{stream.getTracks().forEach(t=>t.stop()); ctx.close();}catch{} }
+          }
+          tick();
+        }).catch(()=>{});
+    }
+
+    function stop(){
+      toggleAutopause.checked = false;
+      if (rec){ try{ rec.onend=null; rec.stop(); }catch{} }
+      isRunning = false;
+      btnStart.disabled = false; btnStop.disabled = true;
+      setStatus('⏹ idle');
+    }
+
+    btnStart.addEventListener('click', start);
+    btnStop.addEventListener('click', stop);
+
+    // PWA install prompt caching
+    if ('serviceWorker' in navigator){
+      navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+    }
+  })();
+  </script>
+</body>
+</html>
