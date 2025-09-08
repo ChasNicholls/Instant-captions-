@@ -1,5 +1,5 @@
 {
-  "name": "Instant Captioner",
+  "name": "Instant Captioner (Low Latency)",
   "short_name": "Captioner",
   "start_url": ".",
   "display": "standalone",
